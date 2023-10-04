@@ -78,18 +78,55 @@ For charts with exceptions, we have a problem, as the exceptions and in-progress
 ("specific_data.data.account_disabled" == false) and ("specific_data.data.is_locked" == false) and not (("specific_data.data.user_factors" == match([("factor_type" == "Password") and (not ("factor_status" == regex("notAllowedByPolicy", "i")))])) and ("specific_data.data.user_factors" == match([(not ("factor_type" == "Password")) and (not ("factor_status" == regex("notAllowedByPolicy", "i")))]))) and ("adapters_data.azure_ad_adapter.user_type" == "Member") and (("adapters_data.azure_ad_adapter.username" == ({"$exists":true,"$ne":""}))) and ((("specific_data.data.user_factors" == ({"$exists":true,"$ne":[]})) and "specific_data.data.user_factors" != [])) and not ("specific_data.data.user_created" >= date("NOW - 14d"))
 ```
 
-### Encryption Gap
+Human readable version:
+
+```
+WHERE Account disabled => no
+AND Is locked => no
+AND NOT (
+    Complex field - Authentication Factors
+        Factor Type equals Password
+        AND NOT Factor Status contains notAllowedByPolicy
+    AND Complex field - Authentication Factors
+        NOT Factor Type equals Password
+        AND NOT Factor Status contains notAllowedByPolicy
+)
+AND AzureAD.User Type queals Member
+AND AzureAD.User Name exists
+AND NOT User Creation Date last-days 14
+```
+
+
+### HD Encryption Gap
 
 * consider splitting to laptops and non-laptops
+* Add additional filters such as power status, last seen
 
 ```
 "specific_data" == match([plugin_name not in ['service_now_adapter'] and (("data.hard_drives.is_encrypted" == false) and (("data.hard_drives.free_size" == ({"$exists":true,"$ne":null}))))])
+```
+
+Human readable version:
+
+```
+Asset Entity  (source != ServiceNow)
+    Hard Drives: Encrypted no
+    Hard Drives: Free Size (GB) exists
 ```
 
 ### Devices with close (30 days) or past CISA due date:
 
 ```
 ("specific_data" == match([("data.cisa_vulnerabilities.due_date" >= date("NOW + 0h") and "data.cisa_vulnerabilities.due_date" <= date("NOW + 30d"))]) or ("specific_data.data.cisa_vulnerabilities.due_date" >= date("NOW - 10000d"))) and ("specific_data.data.last_seen" >= date("NOW - 30d"))
+```
+
+Human readable version:
+```
+WHERE (
+    CISA Known Exploited Vulnerabilities: Due Date - Next days - 30
+    OR CISA Known Exploited Vulnerabilities: Due Date - Last days - 10000
+)
+AND Last seen - last days - 30
 ```
 
 ### Simple Agent or adapter coverage
@@ -99,6 +136,15 @@ For charts with exceptions, we have a problem, as the exceptions and in-progress
 
 ```
 ("specific_data.data.last_seen" >= date("NOW - 30d")) and not ((("adapters_data.azure_ad_adapter.id" == ({"$exists":true,"$ne":""}))) and ("adapters_data.azure_ad_adapter.last_seen" >= date("NOW - 30d")))
+```
+
+Human readable version:
+```
+Last seen - last days - 30
+AND NOT (
+    AzureAD - ID - exists
+    AND AzureAD - Last seen - last days - 30
+)
 ```
 
 ### Cyberark EPM Coverage
@@ -112,10 +158,35 @@ For charts with exceptions, we have a problem, as the exceptions and in-progress
 ### Splunk coverage
 
 * It's recommended to combine this query with a "servers last seen 30 days" that's correct for your organization
+* Consider also adding a powerstate = on subquery or clause
 * The value of the splunk coverage query is to make sure that all server logs are collected
 
 ```
 not ("specific_data.data.installed_software" == match([((("name" == regex("forwarder", "i")) and (("publisher" == regex("splunk", "i")) or ("vendor" == regex("splunk", "i")))) or ("name" == regex("splunk", "i")))])) and (((("adapters_data.tenable_io_adapter.agent_uuid" == ({"$exists":true,"$ne":""}))) and ("adapters_data.tenable_io_adapter.has_agent" == true)) or (("adapters_data.sccm_adapter.id" == ({"$exists":true,"$ne":""})))) and ((("specific_data.data.installed_software" == ({"$exists":true,"$ne":[]})) and "specific_data.data.installed_software" != []))
+```
+Human readble version:
+```
+WHERE Not (
+    Complex field - installed software (
+        (
+            Software Name contains forwarder
+            AND (
+                Software Publisher contains splunk
+                OR Software Vendor contains splunk
+            )
+        )
+        OR Software Name contains splunk
+    )
+)
+
+AND (
+    (
+        Tenable.io - Agent UUID - exists
+        AND Tenable.io - Has Agent - yes
+    )
+    OR SCCM - ID - exists
+)
+AND Last seen - last days - 30
 ```
 
 ### CSPM example
@@ -127,6 +198,18 @@ not ("specific_data.data.installed_software" == match([((("name" == regex("forwa
 (("adapters_data.aws_adapter.id" == ({"$exists":true,"$ne":""}))) and ("adapters_data.aws_adapter.last_seen" >= date("NOW - 30d")) and (not (("adapters_data.wiz_adapter.id" == ({"$exists":true,"$ne":""}))) or not ("adapters_data.wiz_adapter.last_seen" >= date("NOW - 30d"))) and ("specific_data.data.power_state" in ["Migrating","Normal","Rebooting","StartingUp"])
 ```
 
+Human Readable Version:
+
+```
+AWS - ID - exists
+AND AWS - Last Seen - last days - 30
+AND (
+    NOT Wiz - ID exists
+    OR NOT Wiz - Last Seen - last days - 30
+)
+AND Power State in ["Migrating","Normal","Rebooting","StartingUp"]
+```
+
 ### Never logged in old users
 
 * consider splitting to service accounts and non service accounts
@@ -135,3 +218,14 @@ not ("specific_data.data.installed_software" == match([((("name" == regex("forwa
 not ("specific_data.data.user_created" >= date("NOW - 365d")) and ("specific_data.data.logon_count" == 0) and ("specific_data.data.account_disabled" == false) and ("specific_data.data.account_expired" == false) and ("specific_data.data.is_locked" == false) and ("adapters_data.active_directory_adapter.account_lockout" == false) and not ("specific_data.data.last_logon" >= date("NOW - 1000d")) and not ("specific_data.data.last_logon_timestamp" >= date("NOW - 1000d"))
 ```
 
+Human Readable Version:
+```
+WHERE Not User Creation Date - last days - 365
+AND Logon Count equals 0
+AND Account Disabled - no
+AND Account Expired - no
+AND Is Locked - no
+AND Microsoft AD - Account Lockout - no
+AND NOT Last Logon Date - last days - 1000
+AND NOT Last Logon Timestamp - last days - 1000
+```
