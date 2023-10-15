@@ -73,6 +73,7 @@ For charts with exceptions, we have a problem, as the exceptions and in-progress
 ### MFA Gap
 
 * consider splitting to admins, domain admins, etc.
+* This queries requires and depends on MFA defined by Azure AD. If you have a different provider, you will need a different query, that might look the same. Please consider sharing it here!
 
 ```
 ("specific_data.data.account_disabled" == false) and ("specific_data.data.is_locked" == false) and not (("specific_data.data.user_factors" == match([("factor_type" == "Password") and (not ("factor_status" == regex("notAllowedByPolicy", "i")))])) and ("specific_data.data.user_factors" == match([(not ("factor_type" == "Password")) and (not ("factor_status" == regex("notAllowedByPolicy", "i")))]))) and ("adapters_data.azure_ad_adapter.user_type" == "Member") and (("adapters_data.azure_ad_adapter.username" == ({"$exists":true,"$ne":""}))) and ((("specific_data.data.user_factors" == ({"$exists":true,"$ne":[]})) and "specific_data.data.user_factors" != [])) and not ("specific_data.data.user_created" >= date("NOW - 14d"))
@@ -101,6 +102,7 @@ AND NOT User Creation Date last-days 14
 
 * consider splitting to laptops and non-laptops
 * Add additional filters such as power status, last seen
+* This query requires information on HD encryption. Normally it can be provided by adapters such as AWS, AzureAD (Intune) or SCCM. Some adapters provide HD information WITHOUT encryption information, e.g. ServiceNow.
 
 ```
 "specific_data" == match([plugin_name not in ['service_now_adapter'] and (("data.hard_drives.is_encrypted" == false) and (("data.hard_drives.free_size" == ({"$exists":true,"$ne":null}))))])
@@ -115,6 +117,8 @@ Asset Entity  (source != ServiceNow)
 ```
 
 ### Devices with close (30 days) or past CISA due date:
+
+* The information for this query is provided directly by Axonius.
 
 ```
 ("specific_data" == match([("data.cisa_vulnerabilities.due_date" >= date("NOW + 0h") and "data.cisa_vulnerabilities.due_date" <= date("NOW + 30d"))]) or ("specific_data.data.cisa_vulnerabilities.due_date" >= date("NOW - 10000d"))) and ("specific_data.data.last_seen" >= date("NOW - 30d"))
@@ -150,6 +154,7 @@ AND NOT (
 ### Cyberark EPM Coverage
 
 * This is not a simple adapter coverage query as it requires checking both the agent and installed software
+* This query is a way to check coverage, where some devices might have coverage (e.g. the agent is installed) even without the adapter record.
 
 ```
 ("specific_data.data.last_seen" >= date("NOW - 30d")) and ((("specific_data.data.installed_software" == ({"$exists":true,"$ne":[]})) and "specific_data.data.installed_software" != [])) and not (((("adapters_data.cyberark_epm_adapter.id" == ({"$exists":true,"$ne":""}))) and ("adapters_data.cyberark_epm_adapter.last_seen" >= date("NOW - 30d"))) or ("specific_data.data.installed_software.name" == regex("cyberark endpoint", "i")))
@@ -160,6 +165,7 @@ AND NOT (
 * It's recommended to combine this query with a "servers last seen 30 days" that's correct for your organization
 * Consider also adding a powerstate = on subquery or clause
 * The value of the splunk coverage query is to make sure that all server logs are collected
+* This query depends on detailed "installed software" information in Axonius
 
 ```
 not ("specific_data.data.installed_software" == match([((("name" == regex("forwarder", "i")) and (("publisher" == regex("splunk", "i")) or ("vendor" == regex("splunk", "i")))) or ("name" == regex("splunk", "i")))])) and (((("adapters_data.tenable_io_adapter.agent_uuid" == ({"$exists":true,"$ne":""}))) and ("adapters_data.tenable_io_adapter.has_agent" == true)) or (("adapters_data.sccm_adapter.id" == ({"$exists":true,"$ne":""})))) and ((("specific_data.data.installed_software" == ({"$exists":true,"$ne":[]})) and "specific_data.data.installed_software" != []))
@@ -191,7 +197,7 @@ AND Last seen - last days - 30
 
 ### CSPM example
 
-* combine as necessary a CSPM provider (e.g. Wiz, Orca, etc.) with one or more cloud providers (e.g. AWS)
+* Combine as necessary a CSPM provider (e.g. Wiz, Orca, etc.) with one or more cloud providers (e.g. AWS)
 * Consider also checking the other way around - that the cloud provider adapter also has full coverage, i.e. that all devices covered by Wiz are also covered by the AWS adapter.
 
 ```
@@ -213,6 +219,7 @@ AND Power State in ["Migrating","Normal","Rebooting","StartingUp"]
 ### Never logged in old users
 
 * consider splitting to service accounts and non service accounts
+* This query refers to information from Microsoft AD, but it can work with any other adapter
 
 ```
 not ("specific_data.data.user_created" >= date("NOW - 365d")) and ("specific_data.data.logon_count" == 0) and ("specific_data.data.account_disabled" == false) and ("specific_data.data.account_expired" == false) and ("specific_data.data.is_locked" == false) and ("adapters_data.active_directory_adapter.account_lockout" == false) and not ("specific_data.data.last_logon" >= date("NOW - 1000d")) and not ("specific_data.data.last_logon_timestamp" >= date("NOW - 1000d"))
